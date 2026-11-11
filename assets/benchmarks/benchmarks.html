@@ -1,0 +1,109 @@
+<!doctype html>
+<!--
+  The README's benchmark summary: pjit-21k natively and in Chrome, from the figures `just integrate`
+  prints (fusor-ai's models/pjit-21k/baseline.json). Rendered at 1400×1090, twice the pixels, by
+  `node scripts/render-images.mjs` into benchmarks.png and benchmarks-dark.png (`?theme=dark`).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --canvas: #faf9f6; --card: #ffffff; --ink: #272a2c; --soft: #5c5f61; --faint: #8b8d8d;
+    --hairline: #e3e0d9; --ours: #df5036;
+  }
+  :root.dark {
+    --canvas: #121314; --card: #1a1b1c; --ink: #f2f1ed; --soft: #b4b5b3; --faint: #8b8d8d;
+    --hairline: #303335; --ours: #e8603f;
+  }
+  html, body { margin: 0; }
+  body {
+    width: 1400px; height: 1090px; box-sizing: border-box; padding: 56px 64px;
+    background: var(--canvas); color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 32px; }
+  h1 { margin: 0; font-size: 36px; letter-spacing: -0.02em; }
+  header p { margin: 8px 0 0; font-size: 19px; color: var(--soft); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .panel { background: var(--card); border: 1px solid var(--hairline); border-radius: 16px; padding: 24px 28px; }
+  .panel h2 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  .panel .unit { margin: 4px 0 0; font-size: 16px; color: var(--faint); }
+  .verdict { margin: 12px 0 18px; font-size: 19px; font-weight: 600; }
+  .group { display: grid; grid-template-columns: 112px 1fr; align-items: center; column-gap: 12px; margin-top: 12px; }
+  .group > b { font-size: 16px; font-weight: 500; color: var(--soft); }
+  .bars { display: flex; flex-direction: column; gap: 2px; }
+  .row { display: flex; align-items: center; gap: 10px; height: 22px; font-size: 16px; }
+  .bar { height: 22px; border-radius: 0 4px 4px 0; }
+  .stat { display: flex; align-items: baseline; gap: 16px; margin-top: 18px; }
+  .stat b { font-size: 72px; letter-spacing: -0.04em; line-height: 1; }
+  .stat span { font-size: 19px; color: var(--soft); line-height: 1.4; }
+  footer { margin-top: 22px; font-size: 15px; color: var(--faint); line-height: 1.5; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>pjit-21k, natively and in Chrome</h1>
+      <p>P-JiT 21K on one Apple M4 Pro, eight threads, guidance 15; shorter bars are better.</p>
+    </div>
+  </header>
+  <div class="grid" id="grid"></div>
+  <footer>
+    Native: pjit-21k bench at 648 × 912, 20 steps. Chrome: the page through e2e/run.mjs at 640 × 360, 4 steps, both
+    guidance branches at every step, the bundles served from the local machine. Measured while other work loaded the machine.
+  </footer>
+<script>
+  const PANELS = [
+    {
+      title: 'A step in Chrome, on the CPU', unit: 'Seconds per denoising step, both guidance branches',
+      verdict: '@SPEEDUP@× faster with relaxed SIMD', format: (v) => `${v.toFixed(2)} s`,
+      groups: [['Relaxed SIMD', @STEP_RELAXED_N@], ['SIMD128', @STEP_SIMD_N@]],
+    },
+    {
+      title: 'A whole image in Chrome', unit: 'Seconds from Generate to the last step, 640 × 360',
+      verdict: 'Four steps, with the clean image previewed at every step', format: (v) => `${v.toFixed(1)} s`,
+      groups: [['Relaxed SIMD', @TIME_RELAXED_N@], ['SIMD128', @TIME_SIMD_N@]],
+    },
+    {
+      title: 'An image as a native app', unit: 'Seconds, 20 steps at 648 × 912',
+      verdict: '1.8 minutes for a whole image', format: (v) => `${v.toFixed(1)} s`,
+      groups: [['Captions', 0.6], ['20 steps', 105.8]],
+    },
+    {
+      title: 'Download', unit: 'Megabytes: the two bundles',
+      verdict: '5.9 GB: Qwen3.5-4B in 4 and 7 bits, the DiT in 7', format: (v) => `${v.toFixed(0)} MB`,
+      groups: [['Text encoder', 3266], ['Image model', 2626]],
+    },
+    {
+      title: 'Loading the model', unit: 'Seconds until the model is ready, relaxed SIMD',
+      verdict: 'The next visit loads it from this device', format: (v) => `${v.toFixed(1)} s`,
+      groups: [['First visit', @LOAD_N@], ['Revisit', @REVISIT_N@]],
+    },
+  ];
+
+  const grid = document.getElementById('grid');
+  const row = (value, scale, panel) =>
+    `<div class="row"><div class="bar" style="width:${(value / scale) * 100}%;background:var(--ours)"></div>${panel.format(value)}</div>`;
+
+  for (const panel of PANELS) {
+    const scale = Math.max(...panel.groups.map(([, value]) => value)) * 1.32;
+    const groups = panel.groups.map(([label, value]) => `
+      <div class="group"><b>${label}</b><div class="bars">${row(value, scale, panel)}</div></div>`).join('');
+    grid.insertAdjacentHTML('beforeend', `
+      <section class="panel">
+        <h2>${panel.title}</h2><p class="unit">${panel.unit}</p>
+        <p class="verdict">${panel.verdict}</p>${groups}
+      </section>`);
+  }
+  grid.insertAdjacentHTML('beforeend', `
+    <section class="panel">
+      <h2>Agreement with the reference</h2><p class="unit">Every stage against Linum's f32 goldens</p>
+      <div class="stat"><b>9.9·10⁻³</b><span>the transformer's prediction; tokens identical,<br>knots and timesteps exact</span></div>
+    </section>`);
+
+  if (new URLSearchParams(location.search).get('theme') === 'dark') document.documentElement.classList.add('dark');
+</script>
+</body>
+</html>
